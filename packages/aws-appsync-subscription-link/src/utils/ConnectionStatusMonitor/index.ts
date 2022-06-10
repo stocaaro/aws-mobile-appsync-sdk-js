@@ -4,41 +4,54 @@ import { Observable } from "@apollo/client/core";
 type ConnectivityState = "connected" | "disconnected";
 
 export type ConnectionState = {
-  networkStatus: ConnectivityState;
-  socketStatus: ConnectivityState | "connecting";
-  intendedSocketStatus: ConnectivityState;
+  networkState: ConnectivityState;
+  connectionState: ConnectivityState | "connecting";
+  intendedConnectionState: ConnectivityState;
 };
 
 export class ConnectionStatusMonitor {
   // Socket Status is status information about the network, socket and intended socket Status
-  socketStatus: ConnectionState;
-  connectionStatusObservable: Observable<ConnectionState>;
-  private connectionStatusObserver: ZenObservable.SubscriptionObserver<ConnectionState>;
+  connectionState: ConnectionState;
+  private _connectionStatusObservable: Observable<ConnectionState>;
+  private connectionStateObserver: ZenObservable.SubscriptionObserver<ConnectionState>;
 
   private subscription: ZenObservable.Subscription;
   private timeout: ReturnType<typeof setTimeout>;
 
   constructor() {
-    this.socketStatus = {
-      networkStatus: "connected",
-      socketStatus: "disconnected",
-      intendedSocketStatus: "disconnected",
+    this.connectionState = {
+      networkState: "connected",
+      connectionState: "disconnected",
+      intendedConnectionState: "disconnected",
     };
 
-    this.connectionStatusObservable = new Observable(
+    this._connectionStatusObservable = new Observable(
       (
-        socketStatusObserver: ZenObservable.SubscriptionObserver<ConnectionState>
+        connectionStateObserver: ZenObservable.SubscriptionObserver<ConnectionState>
       ) => {
-        this.connectionStatusObserver = socketStatusObserver;
+        connectionStateObserver.next(this.connectionState);
+        this.connectionStateObserver = connectionStateObserver;
       }
     );
 
     this.subscription = ReachabilityMonitor.subscribe(({ online }) => {
       // Maintain the socket status
-      this.updateSocketStatus({
-        networkStatus: online ? "connected" : "disconnected",
+      this.updateConnectionState({
+        networkState: online ? "connected" : "disconnected",
       });
     });
+  }
+
+  public get connectionStatusObservable(): Observable<ConnectionState> {
+    return this._connectionStatusObservable;
+  }
+
+  private get currentConnectionStateObservable(): Observable<ConnectionState> {
+    return new Observable(
+      (observer: ZenObservable.SubscriptionObserver<ConnectionState>) => {
+        observer.complete();
+      }
+    );
   }
 
   unsubscribe() {
@@ -49,37 +62,38 @@ export class ConnectionStatusMonitor {
   }
 
   disconnected() {
-    this.updateSocketStatus({ socketStatus: "disconnected" });
+    this.updateConnectionState({ connectionState: "disconnected" });
   }
 
   openingSocket() {
-    this.updateSocketStatus({
-      intendedSocketStatus: "connected",
-      socketStatus: "connecting",
+    this.updateConnectionState({
+      intendedConnectionState: "connected",
+      connectionState: "connecting",
     });
   }
 
   disconnecting() {
-    this.updateSocketStatus({
-      intendedSocketStatus: "disconnected",
+    this.updateConnectionState({
+      intendedConnectionState: "disconnected",
     });
   }
 
   connectionEstablished() {
-    this.updateSocketStatus({
-      socketStatus: "connected",
+    this.updateConnectionState({
+      connectionState: "connected",
     });
   }
 
-  private updateSocketStatus(statusUpdates: Partial<ConnectionState>) {
+  private updateConnectionState(statusUpdates: Partial<ConnectionState>) {
     // Maintain the socket status
-    const newSocketStatus = { ...this.socketStatus, ...statusUpdates };
-    this.socketStatus = { ...this.socketStatus, ...statusUpdates };
+    const newSocketStatus = { ...this.connectionState, ...statusUpdates };
     if (
-      newSocketStatus !== this.socketStatus &&
-      this.connectionStatusObserver
+      newSocketStatus != this.connectionState &&
+      this.connectionStateObserver
     ) {
-      this.connectionStatusObserver.next({ ...this.socketStatus });
+      this.connectionState = { ...newSocketStatus };
+
+      this.connectionStateObserver.next({ ...this.connectionState });
     }
   }
 }
